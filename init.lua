@@ -5,7 +5,7 @@
 -- Iota's utilities to be importable (Iota's files exist even if Iota loads
 -- after us; mod.xml also enforces the requirement).
 
-local mod_path = "mods/IotaMP HUD+"
+local mod_path = "mods/iota_hud_plus"
 
 local ok_util = pcall(dofile, "mods/iota_multiplayer/files/scripts/lib/utilities.lua")
 if not ok_util then

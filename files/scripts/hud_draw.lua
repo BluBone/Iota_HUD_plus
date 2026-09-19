@@ -38,6 +38,7 @@ local FILL_INSET = 1         -- track area is inset n px inside the background
 local BAR_GAP = M.config.gap -- padding between the bars
 
 local debug_printed = false
+local debug_flask_printed = false
 
 local function clamp01(v)
     return clamp(v, 0, 1)
@@ -45,26 +46,49 @@ end
 
 -- Mana/Flask Bar Logic: wand mana %, or potion/flask fill as fallback. nil = empty.
 -- Put apart, bit trickyer to make than the others.
--- Need to make the flasks work
+-- Potions ALSO carry an AbilityComponent (throw_as_item, empty gun deck), so a
+-- real wand is gated on the "wand" tag (all wands inherit base_wand.xml); any
+-- non-wand item falls back to the flask fill.
 local function get_mana_bar_ratio(player)
+    -- Getters
     local inventory = EntityGetFirstComponentIncludingDisabled(player, "Inventory2Component")
     local active_item = inventory ~= nil and ComponentGetValue2(inventory, "mActiveItem") or nil
     if active_item == nil then return nil end
-
-    local ability = EntityGetFirstComponentIncludingDisabled(active_item, "AbilityComponent")
-    if ability ~= nil then
-        local mana = ComponentGetValue2(ability, "mana") or 0
-        local mana_max = ComponentGetValue2(ability, "mana_max") or 0
-        if mana_max > 0 then return clamp01(mana / mana_max) end
+    -- Wand Mana
+    if EntityHasTag(active_item, "wand") then
+        local ability = EntityGetFirstComponentIncludingDisabled(active_item, "AbilityComponent")
+        if ability ~= nil then
+            local mana = ComponentGetValue2(ability, "mana") or 0
+            local mana_max = ComponentGetValue2(ability, "mana_max") or 0
+            if mana_max > 0 then return clamp01(mana / mana_max) end
+        end
         return nil
     end
 
+    --Flask fill
     local material_inventory = EntityGetFirstComponentIncludingDisabled(active_item, "MaterialInventoryComponent")
     if material_inventory ~= nil then
-        local count = ComponentGetValue2(material_inventory, "count") or 0
-        local capacity = ComponentGetValue2(material_inventory, "capacity") or 0
-        if capacity > 0 then return clamp01(count / capacity) end
-        return nil
+        -- Counts/ Count get's what's currently in the flask
+        local counts = ComponentGetValue2(material_inventory, "count_per_material_type")
+        local count = 0
+        if type(counts) == "table" then
+            for _, v in pairs(counts) do
+                if type(v) == "number" then count = count + v end
+            end
+        end
+        -- potion.lua tracks the capacity as MaterialSuckerComponent.barrel_size.
+        -- Sucker/ Capacity is the getter and value for the flask's size. 
+        local sucker = EntityGetFirstComponentIncludingDisabled(active_item, "MaterialSuckerComponent")
+        local capacity = (sucker ~= nil and ComponentGetValue2(sucker, "barrel_size")) or 0
+        
+        if capacity <= 0 then capacity = count end
+        if not debug_flask_printed then
+            debug_flask_printed = true
+            GamePrint("[IotaMP HUD+] flask count=" .. tostring(count) .. " capacity=" .. tostring(capacity))
+        end
+        if count <= 0 then return 0 end
+        -- Percentage left from capacity
+        return clamp01(count / capacity)
     end
 
     return nil
@@ -72,7 +96,7 @@ end
 
 local function draw_fill(draw_list, bar_x, y, bar_w, ratio, filename, hash)
     if ratio <= 0 then return end
-    local fill_w = bar_w * ratio
+    local fill_w = bar_w * ratio 
     draw_list:layer()
     draw_list:add(GuiOptionsAddForNextWidget, GUI_OPTION.NonInteractive)
     draw_list:add(GuiImage, bar_x, y, filename, 1, fill_w / NATIVE_SIZE, FILL_HEIGHT / NATIVE_SIZE)
@@ -171,6 +195,5 @@ function M.draw()
         GamePrint("[IotaMP HUD+] draw error: " .. tostring(err))
     end
 end
-
 -- Global entry point used by init.lua.
 hud_plus_draw = M.draw
